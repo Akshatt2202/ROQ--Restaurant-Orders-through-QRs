@@ -70,9 +70,9 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
       razorpay_order_id: order.id,
       razorpay_signature: "mock_signature_bypass",
     }
-    
+
     await handleLogPayment(mockResponse)
-    
+
     generateReceiptPDF({
       ...mockResponse,
       amount: order.amount,
@@ -101,7 +101,7 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
       body: [
         ["Payment ID", payment.razorpay_payment_id],
         ["Order ID", payment.razorpay_order_id],
-        ["Merchant", payment.order?.notes?.merchant || "Raj is Great"],
+        ["Merchant", payment.order?.notes?.merchant || "Akshat"],
         ["email", payment.order?.notes?.email || "unknown"],
         ["Amount", (payment.amount / 100 || "—")],
         ["Status", "SUCCESS"],

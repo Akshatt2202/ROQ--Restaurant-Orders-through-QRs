@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "QR Menu",
+  title: "ROQ",
   description: "Instant QR menus for modern restaurants. No app downloads required. Just scan, order, and enjoy.",
 }
 

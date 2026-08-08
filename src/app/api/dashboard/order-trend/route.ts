@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
         const trends = await getTrends(merchantId)
         return sendRJResponse({
             success: true,
-            message: "sucessfully fetched most orderd trends",
+            message: "sucessfully fetched most ordered trends",
             data: trends,
             status: 200
         })

@@ -183,7 +183,7 @@ export async function GET(req: NextRequest) {
         ])
 
         return sendRJResponse({
-            success: true, message: "dashboard matrices feted successfully", data: {
+            success: true, message: "dashboard matrices fetched successfully", data: {
                 orders: orderCount,
                 revenue: revenue,
                 visitor: visitor,
