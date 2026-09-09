@@ -44,8 +44,8 @@ export async function GET() {
         : (error as Error)?.name || "UnknownError";
   }
 
-  return NextResponse.json(
-    { database, reason, tookMs: Date.now() - startedAt, env },
-    { status: database === "connected" ? 200 : 503 }
-  );
+  // Always 200, with the verdict in the body: a 503 here is indistinguishable
+  // from the platform's own 503 while a deployment is swapping over, and some
+  // clients will not surface a body for an error status at all.
+  return NextResponse.json({ database, reason, tookMs: Date.now() - startedAt, env });
 }
