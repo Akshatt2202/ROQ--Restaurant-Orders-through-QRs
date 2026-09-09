@@ -203,7 +203,7 @@ export default function BentoBox() {
                             <SwapySlot
                                 key={slotId}
                                 id={slotId}
-                                className="col-span-6 md:col-span-6 xl:col-span-3 h-48">
+                                className="col-span-12 h-48 sm:col-span-6 xl:col-span-3">
                                 <SwapyItem
                                     id={itemId}
                                     className="w-full h-full cursor-grab active:cursor-grabbing"

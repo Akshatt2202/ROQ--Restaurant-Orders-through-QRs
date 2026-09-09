@@ -226,7 +226,7 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
   const savings = originalTotal - discountedTotal
 
   return (
-    <div className="relative min-h-screen bg-gray-50 px-6 pt-20">
+    <div className="relative min-h-screen bg-gray-50 px-4 pt-20 sm:px-6">
 
       <h1 className="mb-4 font-mono text-2xl text-zinc-950">
         Checkout
@@ -243,14 +243,15 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
       )}
 
       {/* Items */}
-      <div className="mb-32 flex flex-col gap-3">
+      <div className="mb-52 flex flex-col gap-3">
         {checkout.map((item) => (
           <CheckOutItem key={String(item._id)} item={item} />
         ))}
       </div>
 
-      {/* Bottom Summary */}
-      <div className="fixed bottom-0 left-0 right-0 border-t bg-white px-6 py-4 shadow-lg">
+      {/* Bottom Summary - the extra bottom padding clears the iOS home
+          indicator, which otherwise sits on top of the pay button. */}
+      <div className="fixed bottom-0 left-0 right-0 border-t bg-white px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg sm:px-6">
 
         <div className="mb-3 space-y-1 text-sm">
           <div className="flex justify-between text-gray-500">
@@ -274,7 +275,7 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
         <button
           onClick={handlePay}
           disabled={isPaying || heldByOther}
-          className="w-full cursor-pointer rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-400"
+          className="min-h-12 w-full cursor-pointer rounded-xl bg-green-600 text-sm font-semibold text-white transition hover:bg-green-700 active:scale-[.99] active:bg-green-800 disabled:cursor-not-allowed disabled:bg-green-400 disabled:active:scale-100"
         >
           {heldByOther
             ? `${session?.lockedByName || "Someone"} is placing the order…`

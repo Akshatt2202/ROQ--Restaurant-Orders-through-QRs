@@ -201,7 +201,7 @@ const GenerateQRPage = () => {
         <section className="mx-auto max-w-6xl px-6 pb-32">
           <h2 className="text-2xl font-bold mb-8">Saved QR Codes</h2>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {qrs.map((qr) => {
               const value = buildQRValue(qr.merchantId, qr.name)
               const domId = `qr-${qr._id}`
@@ -209,35 +209,14 @@ const GenerateQRPage = () => {
               return (
                 <div
                   key={qr._id}
-                  className="group relative rounded-xl bg-white p-6 shadow-lg"
+                  className="rounded-xl bg-white p-5 shadow-lg transition hover:shadow-xl"
                 >
-                  {/* The hover actions cover only the code, so the link below
-                      stays selectable instead of being blocked by an overlay. */}
-                  <div className="relative">
-                    <GenerateQR
-                      id={domId}
-                      value={value}
-                      maxSize={140}
-                      showLabel={false}
-                    />
-
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 bg-white/70 backdrop-blur transition">
-                      <button
-                        onClick={() => handleDownload(domId, qr.name)}
-                        title="Download PNG"
-                        className="rounded-full bg-white p-3 shadow cursor-pointer"
-                      >
-                        <Download size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(qr._id)}
-                        title="Delete QR"
-                        className="rounded-full bg-white p-3 shadow text-red-600 cursor-pointer"
-                      >
-                        <Delete size={18} />
-                      </button>
-                    </div>
-                  </div>
+                  <GenerateQR
+                    id={domId}
+                    value={value}
+                    maxSize={140}
+                    showLabel={false}
+                  />
 
                   <p className="mt-4 text-center font-medium truncate">
                     {qr.name}
@@ -255,9 +234,29 @@ const GenerateQRPage = () => {
                     <button
                       onClick={() => handleCopy(value)}
                       title="Copy link"
-                      className="shrink-0 rounded-md p-1 text-gray-500 hover:bg-white hover:text-gray-900 cursor-pointer"
+                      aria-label="Copy link"
+                      className="shrink-0 rounded-md p-2 text-gray-500 transition hover:bg-white hover:text-gray-900 active:scale-95 cursor-pointer"
                     >
                       <Copy size={14} />
+                    </button>
+                  </div>
+
+                  {/* Always visible: a hover-only overlay is unreachable on a
+                      phone, which is where these codes are actually managed. */}
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => handleDownload(domId, qr.name)}
+                      className="flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 transition hover:bg-gray-50 active:scale-[.98] cursor-pointer"
+                    >
+                      <Download size={16} />
+                      Save
+                    </button>
+                    <button
+                      onClick={() => handleDelete(qr._id)}
+                      aria-label={`Delete QR ${qr.name}`}
+                      className="flex min-h-[40px] w-11 items-center justify-center rounded-lg border border-gray-200 text-red-600 transition hover:border-red-200 hover:bg-red-50 active:scale-[.98] cursor-pointer"
+                    >
+                      <Delete size={16} />
                     </button>
                   </div>
                 </div>

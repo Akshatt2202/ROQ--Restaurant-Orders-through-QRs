@@ -80,24 +80,27 @@ function MenuItem({ item }: { item: IMenu }) {
           {tableQty === 0 ? (
             <button
               onClick={() => handleUpdate(1)}
-              className="rounded-lg border border-green-600 px-3 py-1 text-xs font-semibold text-green-600 hover:bg-green-50"
+              className="min-h-9 rounded-lg border border-green-600 px-4 text-xs font-semibold text-green-600 transition hover:bg-green-50 active:scale-95 active:bg-green-100"
             >
               ADD
             </button>
           ) : (
             <div className="flex flex-col items-end gap-0.5">
-              <div className="flex items-center gap-3 rounded-lg border border-green-600 px-2 py-1 text-green-600">
+              {/* Explicit 32px hit areas - a bare glyph is far too small to tap. */}
+              <div className="flex items-center rounded-lg border border-green-600 text-green-600">
                 <button
                   onClick={() => handleUpdate(qty-1)}
                   disabled={qty === 0}
-                  className="text-sm font-bold disabled:cursor-not-allowed disabled:opacity-30"
+                  aria-label="Remove one"
+                  className="flex h-8 w-8 items-center justify-center text-base font-bold transition active:bg-green-100 disabled:cursor-not-allowed disabled:opacity-30"
                 >
                   −
                 </button>
-                <span className="text-xs font-semibold">{tableQty}</span>
+                <span className="min-w-6 text-center text-xs font-semibold tabular-nums">{tableQty}</span>
                 <button
                   onClick={() => handleUpdate(qty+1)}
-                  className="text-sm font-bold"
+                  aria-label="Add one"
+                  className="flex h-8 w-8 items-center justify-center text-base font-bold transition active:bg-green-100"
                 >
                   +
                 </button>

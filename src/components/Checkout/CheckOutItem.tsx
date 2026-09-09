@@ -79,21 +79,23 @@ function CheckOutItem({ item }: { item: CheckOutItems }) {
 
           {/* The number is what the whole table is ordering; the buttons still
               move only my own line, since someone else's is theirs to change. */}
-          <div className="flex items-center gap-3 rounded-lg border border-green-600 px-2 py-1 text-green-600">
+          <div className="flex items-center rounded-lg border border-green-600 text-green-600">
             <button
               onClick={() => handleUpdate(qty - 1)}
               disabled={qty === 0}
+              aria-label="Remove one of yours"
               title={qty === 0 ? "You haven't added this one" : "Remove one of yours"}
-              className="text-sm font-bold disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-9 w-9 items-center justify-center text-base font-bold transition active:bg-green-100 disabled:cursor-not-allowed disabled:opacity-30"
             >
               −
             </button>
 
-            <span className="text-xs font-semibold">{tableQty}</span>
+            <span className="min-w-7 text-center text-sm font-semibold tabular-nums">{tableQty}</span>
 
             <button
               onClick={() => handleUpdate(qty + 1)}
-              className="text-sm font-bold"
+              aria-label="Add one"
+              className="flex h-9 w-9 items-center justify-center text-base font-bold transition active:bg-green-100"
             >
               +
             </button>
