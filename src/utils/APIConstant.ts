@@ -8,8 +8,10 @@ export const LOGOUT: string = "/auth/logout"
 // Menu
 export const MENUBUILDER_LISTS: string = "/menu/lists"
 export const REMOVE_SECTION: string = "/menu"
+export const RENAME_SECTION: string = "/menu"
 export const ADD_MENU_ITEM: string = "/menu/upload"
 export const REMOVE_ITEM: string = "/menu/item"
+export const UPDATE_ITEM: string = "/menu/item"
 export const CONSUMER_MENU: string = "/menu/consumer"
 
 // qr

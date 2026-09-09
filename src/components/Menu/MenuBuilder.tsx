@@ -11,11 +11,11 @@ import { Input } from "@/components/ui/input"
 import { Tabs as ShadTabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
-import MenuItemCard from "./MenuItemCard"
+import MenuItemCard, { MenuItemPatch } from "./MenuItemCard"
 import MenuItemCardDefault from "./MenuCardDefault"
 import { ApiResponse } from "@/utils/api"
-import { deleteApi, getApi } from "@/utils/common"
-import { MENUBUILDER_LISTS, REMOVE_ITEM, REMOVE_SECTION } from "@/utils/APIConstant"
+import { deleteApi, getApi, patchApi } from "@/utils/common"
+import { MENUBUILDER_LISTS, REMOVE_SECTION, RENAME_SECTION } from "@/utils/APIConstant"
 import { IMenu } from "@/types/menu"
 
 interface MenuSection {
@@ -33,6 +33,9 @@ interface MenuItem {
 }
 
 interface NewMenuItemInput {
+  /** Present when the item came back from the server, absent for local drafts. */
+  _id?: string
+  section?: string
   title: string
   price: number
   originalPrice?: number
@@ -103,25 +106,54 @@ const MenuBuilderTabs = () => {
     setAddingSection(false)
   }
 
-  const renameSection = () => {
-    if (!sectionInput.trim()) return
-
-    setSections((p) =>
-      p.map((s) =>
-        s.label === activeSection ? { label: sectionInput } : s
-      )
-    )
-
-    setItems((p) =>
-      p.map((i) =>
-        i.section === activeSection
-          ? { ...i, section: sectionInput }
-          : i
-      )
-    )
-
-    setActiveSection(sectionInput)
+  const applyRename = (from: string, to: string) => {
+    setSections((p) => p.map((s) => (s.label === from ? { label: to } : s)))
+    setItems((p) => p.map((i) => (i.section === from ? { ...i, section: to } : i)))
+    setActiveSection(to)
     setEditing(false)
+  }
+
+  const renameSection = async () => {
+    const next = sectionInput.trim()
+
+    if (!next || next === activeSection) {
+      setEditing(false)
+      return
+    }
+
+    if (sections.some((s) => s.label === next)) {
+      toast.error("A section with that name already exists")
+      return
+    }
+
+    // A section only exists in the database through its items - an empty one
+    // is client-side only, so there is nothing to persist yet.
+    const hasItems = items.some((i) => i.section === activeSection)
+
+    if (!hasItems) {
+      applyRename(activeSection, next)
+      return
+    }
+
+    try {
+      toast.loading("Renaming section...", { id: "rename-section" })
+
+      const res = await patchApi<ApiResponse<{ modifiedCount: number }>>({
+        url: RENAME_SECTION,
+        values: { section: activeSection, newSection: next },
+      })
+
+      if (!res?.success) {
+        throw new Error(res?.message)
+      }
+
+      applyRename(activeSection, next)
+      toast.success("Section renamed", { id: "rename-section" })
+    } catch (err: any) {
+      // The rename is not applied locally on failure, so the UI keeps matching
+      // what is actually stored.
+      toast.error(err.message || "Failed to rename section", { id: "rename-section" })
+    }
   }
 
   const deleteSection = async () => {
@@ -161,15 +193,21 @@ const MenuBuilderTabs = () => {
     setItems((p) => [
       ...p,
       {
-        id: uuidv4(),
-        section: activeSection,
         ...data,
+        // The saved document's real id - a generated uuid here meant the card's
+        // delete and edit calls were rejected until the page was reloaded.
+        id: data._id ? String(data._id) : uuidv4(),
+        section: data.section || activeSection,
       },
     ])
   }
 
   const deleteItem = (id: string) => {
     setItems((p) => p.filter((i) => i.id !== id))
+  }
+
+  const updateItem = (id: string, data: MenuItemPatch) => {
+    setItems((p) => p.map((i) => (i.id === id ? { ...i, ...data } : i)))
   }
 
   if (loading) {
@@ -300,6 +338,7 @@ const MenuBuilderTabs = () => {
                     price={item.price}
                     originalPrice={item.originalPrice}
                     deleteCard={deleteItem}
+                    updateCard={updateItem}
                     quantity={item.quantity}
                   />
                 ))}
