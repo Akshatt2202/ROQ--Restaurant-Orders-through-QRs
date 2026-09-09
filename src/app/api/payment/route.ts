@@ -10,10 +10,26 @@ import { Merchants } from "@/model/merchants"
 import { TableSession, TableSessionStatus } from "@/model/tableSession"
 import { resolveTableSession } from "@/utils/tableSession"
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-})
+let razorpayClient: Razorpay | null = null
+
+/**
+ * Built on first request, never at import time. `next build` imports every
+ * route module while collecting page data, and the Razorpay constructor throws
+ * when the keys are missing - which is exactly the case in a CI build whose
+ * secrets have not been wired up yet. Cached, so it is still one client per
+ * server instance rather than one per request.
+ */
+const getRazorpay = (): Razorpay | null => {
+  if (razorpayClient) return razorpayClient
+
+  const key_id = process.env.RAZORPAY_KEY_ID
+  const key_secret = process.env.RAZORPAY_KEY_SECRET
+
+  if (!key_id || !key_secret) return null
+
+  razorpayClient = new Razorpay({ key_id, key_secret })
+  return razorpayClient
+}
 
 export async function GET(req: NextRequest) {
   let lockedSessionId: mongoose.Types.ObjectId | null = null
@@ -36,6 +52,21 @@ export async function GET(req: NextRequest) {
         success: false,
         message: "Need Merchant Id",
         status: 400,
+      })
+    }
+
+    // Checked before anything is written, so a missing secret is a clear 503
+    // rather than a half-created order or a stuck table lock.
+    const razorpay = getRazorpay()
+
+    if (!razorpay) {
+      console.error(
+        "Razorpay is not configured - set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET"
+      )
+      return sendRJResponse({
+        success: false,
+        message: "Payments are not configured",
+        status: 503,
       })
     }
 
