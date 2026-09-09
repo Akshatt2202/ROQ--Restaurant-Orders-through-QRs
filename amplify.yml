@@ -1,0 +1,22 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        # Amplify exposes console environment variables to the build shell, but
+        # the Next.js SSR compute does not inherit them - so process.env.MONGO_URI
+        # is undefined at request time and every query fails. Writing them into
+        # .env.production makes Next load them into the deployed server too.
+        - env | grep -E '^(MONGO_URI|JWT_SECRET|SALT_ROUNDS|RAZORPAY_KEY_ID|RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET|NEXT_PUBLIC_RAZORPAY_KEY_ID|NEXT_PUBLIC_APP_URL|CLOUDINARY_URL|CLOUDINARY_CLOUD_NAME|CLOUDINARY_API_KEY|CLOUDINARY_API_SECRET)=' >> .env.production || true
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*
