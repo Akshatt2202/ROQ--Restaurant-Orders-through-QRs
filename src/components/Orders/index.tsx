@@ -1,8 +1,8 @@
 "use client"
 
-import { FileBox } from 'lucide-react'
+import { FileBox, Inbox } from 'lucide-react'
 import React from 'react'
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 import Tooltip from '../common/Tooltip'
 import { getApi } from '@/utils/common'
 import { GET_ALL_ORDER_HISTORY, GET_ORDER_HISTORY } from '@/utils/APIConstant'
@@ -17,6 +17,7 @@ function index() {
     const cursorRef = React.useRef<Date>(null);
     const hasMore = React.useRef<boolean>(true);
     const [orderHis, setOrderHis] = React.useState<OrderHistory[]>([]);
+    const [loading, setLoading] = React.useState(true);
     const loadingRef = React.useRef(false)
     const newestRef = React.useRef<Date | null>(null);
     const pollingRef = React.useRef(false);
@@ -53,7 +54,6 @@ function index() {
 
         if (response?.success) {
             const list = response.data.orders;
-            console.log(response.data.hasMore)
 
             hasMore.current = response.data.hasMore;
 
@@ -68,6 +68,7 @@ function index() {
         }
 
         loadingRef.current = false;
+        setLoading(false);
     };
 
     const pollNew = async () => {
@@ -90,7 +91,7 @@ function index() {
                 toast.success(
                     list.length > 1
                         ? `${list.length} new orders`
-                        : `New order received${list[0].tableName ? ` from ${list[0].tableName}` : ""}`
+                        : `New order received${list[0].tableName ? ` from table ${list[0].tableName}` : ""}`
                 );
             }
         }
@@ -137,7 +138,7 @@ function index() {
 
         doc.setFont("times", "bold");
         doc.setFontSize(20);
-        doc.setTextColor(0,0,0);
+        doc.setTextColor(0, 0, 0);
         doc.text("QR Menu - Order History", pageWidth / 2, 16, { align: "center" });
 
         doc.setFontSize(10);
@@ -153,7 +154,7 @@ function index() {
             o.name,
             o.email,
             o.tableName || "Direct",
-            o.items.map((i) => `${i.title} x${i.quantity}`).join(", "),
+            o.items.map((item) => `${item.title} x${item.quantity}`).join(", "),
             `${o.amount}`,
             o.status,
             o.paymentId,
@@ -196,93 +197,244 @@ function index() {
             margin: { left: 14, right: 14 }
         });
 
-    
+
         doc.save("order-history.pdf");
         toast.success("PDF Exported", { id: "qr-menu-export-all-pdf" });
     };
 
-
     const labelOf = (item: OrderHistoryItem) => `${item.title} ×${item.quantity}`
-
-    const itemFormater = (items: OrderHistoryItem[]) =>
-        items.slice(0, 2).map(labelOf).join(", ");
 
     /** How many plates the kitchen actually has to send out. */
     const totalPlates = (items: OrderHistoryItem[]) =>
         items.reduce((sum, i) => sum + i.quantity, 0);
+
+    const money = (amount: number) => `₹${amount.toLocaleString("en-IN")}`
+
+    const when = (value: Date) => {
+        const date = new Date(value)
+        return {
+            day: date.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+            time: date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+        }
+    }
+
     return (
         <div className='w-full h-full'>
-            <div className='flex justify-between items-center'>
-                <h2 className='text-xl font-bold font-serif'>Order <span className='text-transparent bg-linear-to-r from-blue-600 via-cyan-500 to-blue-500 bg-clip-text'>'s</span></h2>
-                <div onClick={exportItasPdf} className='flex cursor-pointer items-center gap-1 px-2 py-1 rounded-full bg-orange-300/25 hover:bg-orange-400/25 transition-all duration-150 ease-in border border-orange-300'>
-                    <FileBox size={16} />
-                    <span >Export As PDF</span>
+            <div className='rounded-2xl bg-white shadow-xl'>
+
+                {/* HEADER */}
+                <div className='flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-6 py-5'>
+                    <div>
+                        <h2 className='text-lg font-semibold text-gray-900'>Orders</h2>
+                        <p className='text-sm text-gray-500'>
+                            {loading
+                                ? "Loading order history…"
+                                : orderHis.length === 0
+                                    ? "No orders yet"
+                                    : `${orderHis.length} order${orderHis.length > 1 ? "s" : ""} · updating live`}
+                        </p>
+                    </div>
+
+                    <button
+                        onClick={exportItasPdf}
+                        disabled={orderHis.length === 0}
+                        className='flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50'
+                    >
+                        <FileBox size={16} />
+                        Export PDF
+                    </button>
                 </div>
 
-            </div>
+                {/* EMPTY */}
+                {!loading && orderHis.length === 0 && (
+                    <div className='flex flex-col items-center justify-center px-6 py-20 text-center'>
+                        <div className='mb-3 rounded-full bg-gray-50 p-4'>
+                            <Inbox size={28} className='text-gray-400' />
+                        </div>
+                        <p className='font-medium text-gray-900'>No orders yet</p>
+                        <p className='mt-1 max-w-sm text-sm text-gray-500'>
+                            Orders appear here the moment a guest pays. Share a table QR to get started.
+                        </p>
+                    </div>
+                )}
 
-            <div className='w-full overflow-auto'>
-                <Table>
-                    <TableCaption>A list of your orders {new Date().toLocaleDateString()}.</TableCaption>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead >Sr.</TableHead>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead className="text-center">Table</TableHead>
-                            <TableHead className="text-left">Items</TableHead>
-                            <TableHead className="text-center">Amount</TableHead>
-                            <TableHead className="text-center">Paid</TableHead>
-                            <TableHead className="text-center">PaymentId</TableHead>
-                            <TableHead className="text-center">Date</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {orderHis.map((item: OrderHistory, idx) => (
-                            <TableRow key={item._id}>
-                                <TableCell className="font-medium">{idx + 1}</TableCell>
-                                <TableCell>{item.name}</TableCell>
-                                <TableCell>
-                                    <p className='text-left'>{item.email}</p>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                    {item.tableName ? (
-                                        <span className="rounded-full border border-blue-300 bg-blue-100/60 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
-                                            {item.tableName}
-                                        </span>
-                                    ) : (
-                                        <span className="text-xs text-gray-400">Direct</span>
-                                    )}
-                                </TableCell>
-                                <TableCell className="">
-                                    <Tooltip content={item.items.map(labelOf).join(", ")}>
-                                        <p>
-                                            {itemFormater(item.items)} {item.items.length > 2 && `+${item.items.length - 2} more`}
-                                            <span className="ml-1 text-xs text-gray-500">
-                                                ({totalPlates(item.items)} items)
-                                            </span>
-                                        </p>
-                                    </Tooltip>
-                                </TableCell>
-                                <TableCell className="text-center">{item.amount}</TableCell>
-                                <TableCell className="text-center">{item.status}</TableCell>
-
-                                <TableCell className='text-center' >
-                                    <p className="font-mono">{item.paymentId}</p>
-                                </TableCell>
-
-                                <TableCell className="text-center">{new Date(item.createdAt).toLocaleDateString()}</TableCell>
-
-                            </TableRow>
+                {loading && (
+                    <ul className='divide-y divide-gray-100 md:hidden'>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                            <li key={i} className='space-y-2 px-4 py-4'>
+                                <div className='h-4 w-1/3 animate-pulse rounded bg-gray-100' />
+                                <div className='h-3 w-1/2 animate-pulse rounded bg-gray-100' />
+                                <div className='h-3 w-2/3 animate-pulse rounded bg-gray-100' />
+                            </li>
                         ))}
-                    </TableBody>
-                </Table>
+                    </ul>
+                )}
+
+                {/* MOBILE: one card per order. An eight-column table on a
+                    phone is a horizontal-scroll puzzle, not a list. */}
+                {!loading && orderHis.length > 0 && (
+                    <ul className='divide-y divide-gray-100 md:hidden'>
+                        {orderHis.map((item: OrderHistory) => {
+                            const stamp = when(item.createdAt)
+
+                            return (
+                                <li key={item._id} className='px-4 py-4 transition-colors active:bg-gray-50'>
+                                    <div className='flex items-start justify-between gap-3'>
+                                        <div className='min-w-0'>
+                                            <p className='truncate font-medium text-gray-900'>{item.name}</p>
+                                            <p className='truncate text-xs text-gray-500'>{item.email}</p>
+                                        </div>
+                                        <p className='shrink-0 font-semibold text-gray-900 tabular-nums'>
+                                            {money(item.amount)}
+                                        </p>
+                                    </div>
+
+                                    <p className='mt-2 text-sm text-gray-700'>
+                                        {item.items.map(labelOf).join(", ")}
+                                    </p>
+
+                                    <div className='mt-3 flex flex-wrap items-center gap-2'>
+                                        <StatusBadge status={item.status} />
+                                        {item.tableName ? (
+                                            <span className='inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200'>
+                                                Table {item.tableName}
+                                            </span>
+                                        ) : (
+                                            <span className='text-xs text-gray-400'>Direct</span>
+                                        )}
+                                        <span className='ml-auto text-xs text-gray-400'>
+                                            {stamp.day} · {stamp.time}
+                                        </span>
+                                    </div>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                )}
+
+                {/* DESKTOP TABLE */}
+                {(loading || orderHis.length > 0) && (
+                    <div className='hidden w-full overflow-x-auto md:block'>
+                        <Table>
+                            <TableHeader>
+                                <TableRow className='border-gray-100 hover:bg-transparent'>
+                                    <TableHead className='w-12 pl-6 text-xs font-medium uppercase tracking-wide text-gray-500'>#</TableHead>
+                                    <TableHead className='text-xs font-medium uppercase tracking-wide text-gray-500'>Customer</TableHead>
+                                    <TableHead className='text-xs font-medium uppercase tracking-wide text-gray-500'>Table</TableHead>
+                                    <TableHead className='text-xs font-medium uppercase tracking-wide text-gray-500'>Items</TableHead>
+                                    <TableHead className='text-right text-xs font-medium uppercase tracking-wide text-gray-500'>Amount</TableHead>
+                                    <TableHead className='text-xs font-medium uppercase tracking-wide text-gray-500'>Status</TableHead>
+                                    <TableHead className='text-xs font-medium uppercase tracking-wide text-gray-500'>Payment ID</TableHead>
+                                    <TableHead className='pr-6 text-right text-xs font-medium uppercase tracking-wide text-gray-500'>Placed</TableHead>
+                                </TableRow>
+                            </TableHeader>
+
+                            <TableBody>
+                                {loading
+                                    ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
+                                    : orderHis.map((item: OrderHistory, idx) => {
+                                        const stamp = when(item.createdAt)
+
+                                        return (
+                                            <TableRow key={item._id} className='border-gray-100 transition-colors hover:bg-gray-50/70'>
+                                                <TableCell className='pl-6 text-sm text-gray-400 tabular-nums'>{idx + 1}</TableCell>
+
+                                                <TableCell>
+                                                    <p className='font-medium text-gray-900'>{item.name}</p>
+                                                    <p className='text-xs text-gray-500'>{item.email}</p>
+                                                </TableCell>
+
+                                                <TableCell>
+                                                    {item.tableName ? (
+                                                        <span className='inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200'>
+                                                            Table {item.tableName}
+                                                        </span>
+                                                    ) : (
+                                                        <span className='text-xs text-gray-400'>Direct</span>
+                                                    )}
+                                                </TableCell>
+
+                                                <TableCell className='max-w-xs'>
+                                                    <Tooltip content={item.items.map(labelOf).join(", ")}>
+                                                        <p className='truncate text-left text-sm text-gray-700'>
+                                                            {item.items.slice(0, 2).map(labelOf).join(", ")}
+                                                            {item.items.length > 2 && (
+                                                                <span className='text-gray-400'> +{item.items.length - 2} more</span>
+                                                            )}
+                                                        </p>
+                                                    </Tooltip>
+                                                    <p className='text-xs text-gray-400'>
+                                                        {totalPlates(item.items)} item{totalPlates(item.items) > 1 ? "s" : ""}
+                                                    </p>
+                                                </TableCell>
+
+                                                <TableCell className='text-right font-semibold text-gray-900 tabular-nums'>
+                                                    {money(item.amount)}
+                                                </TableCell>
+
+                                                <TableCell>
+                                                    <StatusBadge status={item.status} />
+                                                </TableCell>
+
+                                                <TableCell>
+                                                    <Tooltip content={item.paymentId}>
+                                                        <p className='max-w-[9rem] truncate font-mono text-xs text-gray-500'>
+                                                            {item.paymentId}
+                                                        </p>
+                                                    </Tooltip>
+                                                </TableCell>
+
+                                                <TableCell className='pr-6 text-right'>
+                                                    <p className='text-sm text-gray-700'>{stamp.day}</p>
+                                                    <p className='text-xs text-gray-400'>{stamp.time}</p>
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })}
+                            </TableBody>
+                        </Table>
+                    </div>
+                )}
+
+                {/* INFINITE SCROLL SENTINEL */}
+                <div ref={baseRef} />
+
+                {!loading && orderHis.length > 0 && !hasMore.current && (
+                    <p className='border-t border-gray-100 py-4 text-center text-xs text-gray-400'>
+                        End of order history
+                    </p>
+                )}
             </div>
-
-            <div ref={baseRef} />
-
         </div>
     )
 }
+
+const StatusBadge = ({ status }: { status: string }) => {
+    const tone =
+        status === "COMPLETED"
+            ? "bg-green-50 text-green-700 ring-green-200"
+            : status === "FAILED"
+                ? "bg-red-50 text-red-700 ring-red-200"
+                : "bg-amber-50 text-amber-700 ring-amber-200"
+
+    const label = status.charAt(0) + status.slice(1).toLowerCase()
+
+    return (
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${tone}`}>
+            <span className='h-1.5 w-1.5 rounded-full bg-current' />
+            {label}
+        </span>
+    )
+}
+
+const SkeletonRow = () => (
+    <TableRow className='border-gray-100'>
+        {Array.from({ length: 8 }).map((_, i) => (
+            <TableCell key={i} className={i === 0 ? "pl-6" : i === 7 ? "pr-6" : ""}>
+                <div className='h-4 animate-pulse rounded bg-gray-100' />
+            </TableCell>
+        ))}
+    </TableRow>
+)
 
 export default index
