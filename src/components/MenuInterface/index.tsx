@@ -3,7 +3,6 @@
 import React from "react"
 import Image from "next/image"
 import NavBar from "../common/NavBar"
-import Footer from "../common/Footer"
 import { ReactLenis } from "lenis/react"
 import MenuSection from "./MenuSection"
 import ItemNotch from "./ItemNotch"
@@ -13,8 +12,11 @@ import { CONSUMER_MENU } from "@/utils/APIConstant"
 import { IMenu } from "@/types/menu"
 import { syncCartToCheckOut } from "@/store/reducer/checkout"
 import { useAppDispatch, useAppSelector } from "@/hook/redux"
+import { rememberTable } from "@/utils/table"
+import { useTableSession } from "@/hook/useTableSession"
+import { Users } from "lucide-react"
 
-function MerchantPage({ merchantId }: { merchantId: string }) {
+function MerchantPage({ merchantId, table }: { merchantId: string; table?: string }) {
   const [menu, setMenu] = React.useState<IMenu[]>([])
   const dispatch = useAppDispatch();
   const userId = useAppSelector(state => state.merchant).merchant?._id
@@ -49,6 +51,15 @@ function MerchantPage({ merchantId }: { merchantId: string }) {
   React.useEffect(() => {
     dispatch(syncCartToCheckOut({ dispatch: dispatch }));
   },[])
+
+  // Only the QR url knows which table this is, so hold on to it for checkout.
+  React.useEffect(() => {
+    rememberTable(merchantId, table)
+  }, [merchantId, table])
+
+  // Joining the table is what makes the cart shared: everyone who scanned this
+  // QR writes into one cart, and this keeps the grid in step with their edits.
+  const session = useTableSession(merchantId, table)
 
 
   return (
@@ -91,6 +102,21 @@ function MerchantPage({ merchantId }: { merchantId: string }) {
             <h1 className="mb-6 text-center text-3xl md:text-6xl font-serif font-bold text-slate-950">
               What's your Mood
             </h1>
+
+            {session && (
+              <div className="mx-auto mb-8 flex max-w-md items-center justify-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
+                <Users size={16} />
+                <span className="font-medium">Table {session.tableName}</span>
+                <span className="text-green-700/70">
+                  · {session.members.length === 1
+                    ? "shared cart - others can join by scanning"
+                    : `sharing a cart with ${session.members
+                        .filter((m) => !m.isMe)
+                        .map((m) => m.name)
+                        .join(", ")}`}
+                </span>
+              </div>
+            )}
 
             {Array.from(menuItem.entries()).map(([section, items]) => (
               <MenuSection

@@ -1,15 +1,17 @@
 import { verifyAuth } from "@/middleware/auth"
-import { NextRequest } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { sendRJResponse } from "@/utils/api"
 import { Order } from "@/model/order"
 import { Transaction, TransactionStatus } from "@/model/transations"
 import { Cart } from "@/model/cart"
+import { TableSession, TableSessionStatus } from "@/model/tableSession"
+import { clearTableSessionCookie } from "@/utils/tableSession"
 
 export async function POST(req: NextRequest) {
   try {
     const userId = await verifyAuth(req)
-    if (!userId) {
+    if (!userId || userId instanceof NextResponse) {
       return sendRJResponse({ success: false, message: "Unauthorized", status: 401 })
     }
 
@@ -53,18 +55,25 @@ export async function POST(req: NextRequest) {
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex")
 
-    // if (generatedSignature !== razorpay_signature) {
-    //   transaction.status = TransactionStatus.FAILED
-    //   transaction.failureReason = "Signature mismatch"
-    //   transaction.gatewayResponse = { razorpay_order_id, razorpay_payment_id }
-    //   await transaction.save()
+    const signatureBuffer = Buffer.from(razorpay_signature, "utf8")
+    const generatedBuffer = Buffer.from(generatedSignature, "utf8")
 
-    //   return sendRJResponse({
-    //     success: false,
-    //     message: "Payment verification failed",
-    //     status: 400,
-    //   })
-    // }
+    const isValidSignature =
+      signatureBuffer.length === generatedBuffer.length &&
+      crypto.timingSafeEqual(signatureBuffer, generatedBuffer)
+
+    if (!isValidSignature) {
+      transaction.status = TransactionStatus.FAILED
+      transaction.failureReason = "Signature mismatch"
+      transaction.gatewayResponse = { razorpay_order_id, razorpay_payment_id }
+      await transaction.save()
+
+      return sendRJResponse({
+        success: false,
+        message: "Payment verification failed",
+        status: 400,
+      })
+    }
 
     transaction.status = TransactionStatus.COMPLETED
     transaction.razorpayPaymentId = razorpay_payment_id
@@ -75,17 +84,35 @@ export async function POST(req: NextRequest) {
     }
     await transaction.save()
 
-    await Order.findByIdAndUpdate(transaction.orderId, {
-      paymentStatus: "PAID",
-    })
+    const order = await Order.findByIdAndUpdate(
+      transaction.orderId,
+      { paymentStatus: "PAID" },
+      { new: true }
+    )
 
-    await Cart.deleteOne({ userId })
+    // A paid table is finished: close the session (freeing the table for the
+    // next guests) and clear the shared cart. A solo customer just loses theirs.
+    if (order?.sessionId) {
+      await TableSession.updateOne(
+        { _id: order.sessionId },
+        {
+          $set: { status: TableSessionStatus.CLOSED, closedAt: new Date() },
+          $unset: { activeKey: 1, lockedBy: 1 },
+          $inc: { version: 1 },
+        }
+      )
+      await Cart.deleteOne({ sessionId: order.sessionId })
+    } else {
+      await Cart.deleteOne({ userId })
+    }
 
-    return sendRJResponse({
+    const res = sendRJResponse({
       success: true,
       message: "Payment verified successfully",
       status: 200,
     })
+
+    return clearTableSessionCookie(res)
   } catch (error) {
     console.error("Verify payment error:", error)
     return sendRJResponse({

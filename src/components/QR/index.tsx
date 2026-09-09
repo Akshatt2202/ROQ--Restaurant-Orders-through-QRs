@@ -1,11 +1,10 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useState } from "react"
 import NavBar from "../common/NavBar"
-import Footer from "../common/Footer"
 import TypeWriter from "../common/TypeWritter"
 import GenerateQR from "@/components/QR/GenerateQR"
-import { Delete, Download, Save } from "lucide-react"
+import { Copy, Delete, Download, Save } from "lucide-react"
 import toast from "react-hot-toast"
 import { useAppSelector } from "@/hook/redux"
 import { deleteApi, getApi, postApi } from "@/utils/common"
@@ -49,7 +48,7 @@ const GenerateQRPage = () => {
   }, [])
 
   const buildQRValue = (merchantId: string, name: string) =>
-    `${BASE_URL}/consumer/${merchantId}/${encodeURIComponent(name)}`
+    `${BASE_URL}/consumer/${merchantId}?table=${encodeURIComponent(name)}`
 
   const handlePreview = () => {
     if (!inputName.trim()) {
@@ -57,7 +56,13 @@ const GenerateQRPage = () => {
       return
     }
 
-    setPreviewQR(`${BASE_URL}/consumer/${merchantId}?id=${inputName}`)
+    if (!merchantId) {
+      toast.error("Merchant not loaded yet")
+      return
+    }
+
+    // Same url the saved QR will carry, so the preview is not a different link.
+    setPreviewQR(buildQRValue(merchantId, inputName.trim()))
   }
 
   const handleSaveQR = async () => {
@@ -110,7 +115,17 @@ const GenerateQRPage = () => {
     }
   }
 
-  const handleDownload = (domId: string) => {
+  const handleCopy = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link)
+      toast.success("Link copied")
+    } catch {
+      // Clipboard needs https / permission, so fall back to selecting the text.
+      toast.error("Could not copy - select the link and copy it manually")
+    }
+  }
+
+  const handleDownload = (domId: string, name: string) => {
     const canvas = document.querySelector(
       `#${domId} canvas`
     ) as HTMLCanvasElement | null
@@ -118,7 +133,7 @@ const GenerateQRPage = () => {
     if (!canvas) return
 
     const link = document.createElement("a")
-    link.download = "qr-code.png"
+    link.download = `qr-${name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`
     link.href = canvas.toDataURL("image/png")
     link.click()
   }
@@ -196,28 +211,53 @@ const GenerateQRPage = () => {
                   key={qr._id}
                   className="group relative rounded-xl bg-white p-6 shadow-lg"
                 >
-                  <GenerateQR
-                    id={domId}
-                    value={value}
-                    maxSize={140}
-                  />
+                  {/* The hover actions cover only the code, so the link below
+                      stays selectable instead of being blocked by an overlay. */}
+                  <div className="relative">
+                    <GenerateQR
+                      id={domId}
+                      value={value}
+                      maxSize={140}
+                      showLabel={false}
+                    />
+
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 bg-white/70 backdrop-blur transition">
+                      <button
+                        onClick={() => handleDownload(domId, qr.name)}
+                        title="Download PNG"
+                        className="rounded-full bg-white p-3 shadow cursor-pointer"
+                      >
+                        <Download size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(qr._id)}
+                        title="Delete QR"
+                        className="rounded-full bg-white p-3 shadow text-red-600 cursor-pointer"
+                      >
+                        <Delete size={18} />
+                      </button>
+                    </div>
+                  </div>
 
                   <p className="mt-4 text-center font-medium truncate">
                     {qr.name}
                   </p>
 
-                  <div className="absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 bg-white/70 backdrop-blur transition">
-                    <button
-                      onClick={() => handleDownload(domId)}
-                      className="rounded-full bg-white p-3 shadow"
+                  <div className="mt-2 flex items-start gap-2 rounded-lg bg-gray-50 px-2 py-2">
+                    <a
+                      href={value}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 flex-1 break-all select-all text-xs text-gray-600 hover:text-pink-600"
                     >
-                      <Download size={18} />
-                    </button>
+                      {value}
+                    </a>
                     <button
-                      onClick={() => handleDelete(qr._id)}
-                      className="rounded-full bg-white p-3 shadow text-red-600"
+                      onClick={() => handleCopy(value)}
+                      title="Copy link"
+                      className="shrink-0 rounded-md p-1 text-gray-500 hover:bg-white hover:text-gray-900 cursor-pointer"
                     >
-                      <Delete size={18} />
+                      <Copy size={14} />
                     </button>
                   </div>
                 </div>

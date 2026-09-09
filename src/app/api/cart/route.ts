@@ -1,14 +1,25 @@
 import { verifyAuth } from "@/middleware/auth";
-import { Cart, ICartItem } from "@/model/cart";
+import { Cart } from "@/model/cart";
+import { TableSessionStatus } from "@/model/tableSession";
 import { sendRJResponse } from "@/utils/api";
+import { resolveTableSession } from "@/utils/tableSession";
 import mongoose from "mongoose";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+/**
+ * A shared table cart lives on the session; a solo customer keeps their own.
+ * Both shapes are read and written through this one filter.
+ */
+const cartFilter = (session: any, userId: mongoose.Types.ObjectId) =>
+    session
+        ? { sessionId: session._id }
+        : { userId: new mongoose.Types.ObjectId(String(userId)) };
 
 export async function GET(req: NextRequest) {
     try {
-        const merchantId = await verifyAuth(req);
+        const userId = await verifyAuth(req);
 
-        if (!merchantId) {
+        if (!userId || userId instanceof NextResponse) {
             return sendRJResponse({
                 success: false,
                 message: "Unauthorized",
@@ -16,9 +27,20 @@ export async function GET(req: NextRequest) {
             });
         }
 
+        const me = new mongoose.Types.ObjectId(String(userId));
+        const session = await resolveTableSession(req, me);
+
         const cartData = await Cart.aggregate([
-            { $match: { userId: new mongoose.Types.ObjectId(merchantId as any) } },
+            { $match: cartFilter(session, me) },
             { $unwind: "$items" },
+
+            // Lines written before per-person carts existed belong to the owner.
+            {
+                $addFields: {
+                    "items.owner": { $ifNull: ["$items.addedBy", "$userId"] }
+                }
+            },
+
             {
                 $lookup: {
                     from: "menus",
@@ -28,21 +50,52 @@ export async function GET(req: NextRequest) {
                 }
             },
             { $unwind: "$menuDetails" },
+
             {
-                $project: {
-                    _id: "$menuDetails._id",
-                    merchantId: "$menuDetails.merchantId",
-                    title: "$menuDetails.title",
-                    price: "$menuDetails.price",
-                    image: "$menuDetails.image",
-                    quantity: "$menuDetails.quantity",
-                    section: "$menuDetails.section",
-                    itemCount: "$items.quantity", 
-                    createdAt: "$menuDetails.createdAt",
-                    updatedAt: "$menuDetails.updatedAt"
+                $lookup: {
+                    from: "merchants",
+                    localField: "items.owner",
+                    foreignField: "_id",
+                    as: "ownerDetails"
                 }
-            }
+            },
+
+            {
+                $group: {
+                    _id: "$menuDetails._id",
+                    merchantId: { $first: "$menuDetails.merchantId" },
+                    title: { $first: "$menuDetails.title" },
+                    price: { $first: "$menuDetails.price" },
+                    originalPrice: { $first: "$menuDetails.originalPrice" },
+                    image: { $first: "$menuDetails.image" },
+                    quantity: { $first: "$menuDetails.quantity" },
+                    section: { $first: "$menuDetails.section" },
+                    createdAt: { $first: "$menuDetails.createdAt" },
+                    updatedAt: { $first: "$menuDetails.updatedAt" },
+
+                    // What this customer may edit...
+                    itemCount: {
+                        $sum: {
+                            $cond: [{ $eq: ["$items.owner", me] }, "$items.quantity", 0]
+                        }
+                    },
+                    // ...and what the whole table is actually ordering.
+                    tableCount: { $sum: "$items.quantity" },
+
+                    contributors: {
+                        $push: {
+                            name: {
+                                $ifNull: [{ $arrayElemAt: ["$ownerDetails.name", 0] }, "Guest"]
+                            },
+                            quantity: "$items.quantity",
+                            isMe: { $eq: ["$items.owner", me] }
+                        }
+                    }
+                }
+            },
+            { $sort: { title: 1 } }
         ]);
+
         return sendRJResponse({
             success: true,
             message: "cart fetched successfully",
@@ -60,44 +113,70 @@ export async function GET(req: NextRequest) {
     }
 }
 
-
 export async function POST(req: NextRequest) {
     try {
         const userId = await verifyAuth(req);
 
-        const { itemId, quantity } = await req.json();
-
-        if (!userId) {
+        if (!userId || userId instanceof NextResponse) {
             return sendRJResponse({ success: false, message: "Unauthorized", status: 401 });
         }
 
-        if (!itemId) {
+        const { itemId, quantity } = await req.json();
+
+        if (!itemId || !mongoose.Types.ObjectId.isValid(itemId)) {
             return sendRJResponse({ success: false, message: "Invalid Item or Quantity", status: 400 });
         }
 
-        let cart = await Cart.findOne({ userId });
-        if (!cart) {
-            cart = await Cart.create({
-                userId,
-                items: [{ item: itemId, quantity }]
+        const me = new mongoose.Types.ObjectId(String(userId));
+        const session = await resolveTableSession(req, me);
+
+        if (session?.status === TableSessionStatus.LOCKED) {
+            return sendRJResponse({
+                success: false,
+                message: "Someone at your table is placing the order",
+                status: 409,
+            });
+        }
+
+        const filter = cartFilter(session, me);
+        const item = new mongoose.Types.ObjectId(String(itemId));
+        const qty = Number(quantity);
+
+        // Every write below is a single atomic update. The old read-modify-write
+        // (findOne -> mutate -> save) lost updates whenever two people at the
+        // same table changed the cart within the same round trip.
+        if (!qty || qty <= 0) {
+            await Cart.updateOne(filter, {
+                $pull: { items: { item, addedBy: me } },
+                $inc: { version: 1 },
             });
         } else {
-            const itemIndex = cart.items.findIndex(
-                (p: ICartItem) => p.item.toString() === itemId
+            const updated = await Cart.updateOne(
+                {
+                    ...filter,
+                    items: {
+                        $elemMatch: {
+                            item,
+                            $or: [{ addedBy: me }, { addedBy: { $exists: false } }],
+                        },
+                    },
+                },
+                { $set: { "items.$.quantity": qty, "items.$.addedBy": me }, $inc: { version: 1 } }
             );
 
-            if (itemIndex > -1) {
-                if (quantity !== 0) {
-                    cart.items[itemIndex].quantity = quantity;
-                } else {
-                    cart.items.remove(cart.items[itemIndex]);
-                }
-            } else {
-                cart.items.push({ item: itemId, quantity });
+            if (updated.matchedCount === 0) {
+                // No line of mine for this item yet - add one. The upsert copies
+                // userId/sessionId from the filter, so the cart is created if
+                // this is the first item at the table.
+                await Cart.updateOne(
+                    filter,
+                    { $push: { items: { item, quantity: qty, addedBy: me } }, $inc: { version: 1 } },
+                    { upsert: true }
+                );
             }
-
-            await cart.save();
         }
+
+        const cart = await Cart.findOne(filter, { version: 1, items: 1 });
 
         return sendRJResponse({
             success: true,

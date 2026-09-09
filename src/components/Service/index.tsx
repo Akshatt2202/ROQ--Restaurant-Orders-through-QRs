@@ -2,7 +2,6 @@
 import React from "react"
 import NavBar from "../common/NavBar"
 import TypeWriter from "../common/TypeWritter"
-import Footer from "../common/Footer"
 import { Dock, IndianRupee, QrCodeIcon, Timer } from "lucide-react"
 import Image from "next/image"
 import ServiceCard from "./ServiceCard"

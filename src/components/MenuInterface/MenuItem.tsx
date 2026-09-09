@@ -12,7 +12,10 @@ function MenuItem({ item }: { item: IMenu }) {
   const checkout = useAppSelector(state => state.checkOut)
   const checkoutItem = checkout.find(_i => _i._id === item._id)
 
+  // My own line drives the +/- maths; the table's total is what gets shown, so
+  // the grid agrees with the cart when others at the table added the same dish.
   const qty = checkoutItem?.itemCount ?? 0
+  const tableQty = checkoutItem?.tableCount ?? qty
 
   const discount =
     item.originalPrice && item.originalPrice > item.price
@@ -74,7 +77,7 @@ function MenuItem({ item }: { item: IMenu }) {
             </span>
           </div>
 
-          {qty === 0 ? (
+          {tableQty === 0 ? (
             <button
               onClick={() => handleUpdate(1)}
               className="rounded-lg border border-green-600 px-3 py-1 text-xs font-semibold text-green-600 hover:bg-green-50"
@@ -82,20 +85,27 @@ function MenuItem({ item }: { item: IMenu }) {
               ADD
             </button>
           ) : (
-            <div className="flex items-center gap-3 rounded-lg border border-green-600 px-2 py-1 text-green-600">
-              <button
-                onClick={() => handleUpdate(qty-1)}
-                className="text-sm font-bold"
-              >
-                −
-              </button>
-              <span className="text-xs font-semibold">{qty}</span>
-              <button
-                onClick={() => handleUpdate(qty+1)}
-                className="text-sm font-bold"
-              >
-                +
-              </button>
+            <div className="flex flex-col items-end gap-0.5">
+              <div className="flex items-center gap-3 rounded-lg border border-green-600 px-2 py-1 text-green-600">
+                <button
+                  onClick={() => handleUpdate(qty-1)}
+                  disabled={qty === 0}
+                  className="text-sm font-bold disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  −
+                </button>
+                <span className="text-xs font-semibold">{tableQty}</span>
+                <button
+                  onClick={() => handleUpdate(qty+1)}
+                  className="text-sm font-bold"
+                >
+                  +
+                </button>
+              </div>
+
+              {tableQty !== qty && (
+                <span className="text-[10px] text-gray-500">you ×{qty}</span>
+              )}
             </div>
           )}
         </div>

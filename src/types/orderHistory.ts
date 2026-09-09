@@ -1,3 +1,9 @@
+export interface OrderHistoryItem {
+    title: string;
+    /** Total ordered across everyone at the table, not the number of lines. */
+    quantity: number;
+}
+
 export interface OrderHistory {
     _id: string,
     name: string;
@@ -5,7 +11,8 @@ export interface OrderHistory {
     amount: number;
     status: string;
     paymentId: string;
-    items: string[];
+    tableName?: string;
+    items: OrderHistoryItem[];
     createdAt: Date;
 }
 

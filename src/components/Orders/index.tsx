@@ -7,7 +7,7 @@ import Tooltip from '../common/Tooltip'
 import { getApi } from '@/utils/common'
 import { GET_ALL_ORDER_HISTORY, GET_ORDER_HISTORY } from '@/utils/APIConstant'
 import { ApiResponse } from '@/utils/api'
-import { OrderHisResponse, OrderHistory } from '@/types/orderHistory'
+import { OrderHisResponse, OrderHistory, OrderHistoryItem } from '@/types/orderHistory'
 import toast from 'react-hot-toast'
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -18,6 +18,8 @@ function index() {
     const hasMore = React.useRef<boolean>(true);
     const [orderHis, setOrderHis] = React.useState<OrderHistory[]>([]);
     const loadingRef = React.useRef(false)
+    const newestRef = React.useRef<Date | null>(null);
+    const pollingRef = React.useRef(false);
 
     React.useEffect(() => {
         if (!baseRef.current) return;
@@ -58,11 +60,48 @@ function index() {
             cursorRef.current =
                 list.length > 0 ? list[list.length - 1].createdAt : null;
 
+            if (!newestRef.current && list.length > 0) {
+                newestRef.current = list[0].createdAt;
+            }
+
             setOrderHis(prev => [...prev, ...list]);
         }
 
         loadingRef.current = false;
     };
+
+    const pollNew = async () => {
+        if (pollingRef.current || !newestRef.current) return;
+
+        pollingRef.current = true;
+
+        const param = new URLSearchParams({ since: String(newestRef.current) });
+
+        const response = await getApi<ApiResponse<OrderHisResponse>>({
+            url: GET_ORDER_HISTORY + `?${param.toString()}`
+        });
+
+        if (response?.success) {
+            const list = response.data.orders;
+
+            if (list.length > 0) {
+                newestRef.current = list[0].createdAt;
+                setOrderHis(prev => [...list, ...prev]);
+                toast.success(
+                    list.length > 1
+                        ? `${list.length} new orders`
+                        : `New order received${list[0].tableName ? ` from ${list[0].tableName}` : ""}`
+                );
+            }
+        }
+
+        pollingRef.current = false;
+    };
+
+    React.useEffect(() => {
+        const interval = setInterval(pollNew, 5000);
+        return () => clearInterval(interval);
+    }, []);
 
     const fetchALList = async (): Promise<OrderHistory[]> => {
 
@@ -113,7 +152,8 @@ function index() {
             i + 1,
             o.name,
             o.email,
-            o.items.join(", "),
+            o.tableName || "Direct",
+            o.items.map((i) => `${i.title} x${i.quantity}`).join(", "),
             `${o.amount}`,
             o.status,
             o.paymentId,
@@ -126,6 +166,7 @@ function index() {
                 "Sr.",
                 "Name",
                 "Email",
+                "Table",
                 "Items",
                 "Amount",
                 "Status",
@@ -161,7 +202,14 @@ function index() {
     };
 
 
-    const itemFormater = (items: string[]) => items.slice(0, 2).join(", ");
+    const labelOf = (item: OrderHistoryItem) => `${item.title} ×${item.quantity}`
+
+    const itemFormater = (items: OrderHistoryItem[]) =>
+        items.slice(0, 2).map(labelOf).join(", ");
+
+    /** How many plates the kitchen actually has to send out. */
+    const totalPlates = (items: OrderHistoryItem[]) =>
+        items.reduce((sum, i) => sum + i.quantity, 0);
     return (
         <div className='w-full h-full'>
             <div className='flex justify-between items-center'>
@@ -181,6 +229,7 @@ function index() {
                             <TableHead >Sr.</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Email</TableHead>
+                            <TableHead className="text-center">Table</TableHead>
                             <TableHead className="text-left">Items</TableHead>
                             <TableHead className="text-center">Amount</TableHead>
                             <TableHead className="text-center">Paid</TableHead>
@@ -191,14 +240,28 @@ function index() {
                     <TableBody>
                         {orderHis.map((item: OrderHistory, idx) => (
                             <TableRow key={item._id}>
-                                <TableCell className="font-medium">{idx}</TableCell>
+                                <TableCell className="font-medium">{idx + 1}</TableCell>
                                 <TableCell>{item.name}</TableCell>
                                 <TableCell>
                                     <p className='text-left'>{item.email}</p>
                                 </TableCell>
+                                <TableCell className="text-center">
+                                    {item.tableName ? (
+                                        <span className="rounded-full border border-blue-300 bg-blue-100/60 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+                                            {item.tableName}
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs text-gray-400">Direct</span>
+                                    )}
+                                </TableCell>
                                 <TableCell className="">
-                                    <Tooltip content={String(item.items)}>
-                                        <p>{itemFormater(item.items)} {item.items.length > 2 && `+${item.items.length - 2} more`}</p>
+                                    <Tooltip content={item.items.map(labelOf).join(", ")}>
+                                        <p>
+                                            {itemFormater(item.items)} {item.items.length > 2 && `+${item.items.length - 2} more`}
+                                            <span className="ml-1 text-xs text-gray-500">
+                                                ({totalPlates(item.items)} items)
+                                            </span>
+                                        </p>
                                     </Tooltip>
                                 </TableCell>
                                 <TableCell className="text-center">{item.amount}</TableCell>

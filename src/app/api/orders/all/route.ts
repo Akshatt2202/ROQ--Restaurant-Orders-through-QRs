@@ -50,15 +50,33 @@ const getOrders = async (merchantId: Types.ObjectId) => {
 
             { $unwind: "$menu" },
 
+            // Same two-stage merge as the paginated feed - one entry per dish,
+            // with the quantity the whole table ordered.
             {
                 $group: {
-                    _id: "$_id",
+                    _id: { txn: "$_id", menu: "$menu._id" },
                     name: { $first: "$user.name" },
                     email: { $first: "$user.email" },
                     amount: { $first: "$amount" },
                     status: { $first: "$status" },
                     paymentId: { $first: "$razorpayOrderId" },
-                    items: { $push: "$menu.title" },
+                    tableName: { $first: "$order.tableName" },
+                    createdAt: { $first: "$createdAt" },
+                    title: { $first: "$menu.title" },
+                    quantity: { $sum: { $ifNull: ["$order.items.quantity", 1] } }
+                }
+            },
+
+            {
+                $group: {
+                    _id: "$_id.txn",
+                    name: { $first: "$name" },
+                    email: { $first: "$email" },
+                    amount: { $first: "$amount" },
+                    status: { $first: "$status" },
+                    paymentId: { $first: "$paymentId" },
+                    tableName: { $first: "$tableName" },
+                    items: { $push: { title: "$title", quantity: "$quantity" } },
                     createdAt: { $first: "$createdAt" }
                 }
             },

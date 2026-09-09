@@ -2,7 +2,6 @@
 
 import React from "react"
 import NavBar from "../common/NavBar"
-import Footer from "../common/Footer"
 import TypeWriter from "../common/TypeWritter"
 import MenuBuilder from "./MenuBuilder"
 import Link from "next/link"

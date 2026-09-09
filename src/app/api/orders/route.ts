@@ -6,14 +6,19 @@ import { Types } from "mongoose";
 import { NextRequest } from "next/server";
 
 
-const getOrders = async (merchantId: Types.ObjectId, lastCursor: string | null, limit: number = 20) => {
+const getOrders = async (merchantId: Types.ObjectId, lastCursor: string | null, limit: number = 20, since: string | null = null) => {
     try {
-        const query: Record<string, any> = { 
+        const query: Record<string, any> = {
             merchantId: new Types.ObjectId(merchantId),
-            status: "COMPLETED" 
+            status: "COMPLETED"
         }
 
-        if (lastCursor) {
+        if (since) {
+            const date = new Date(since);
+            if (!isNaN(date.getTime())) {
+                query.createdAt = { $gt: date }
+            }
+        } else if (lastCursor) {
             const date = new Date(lastCursor);
             if (!isNaN(date.getTime())) {
                 query.createdAt = { $lt: date }
@@ -59,15 +64,34 @@ const getOrders = async (merchantId: Types.ObjectId, lastCursor: string | null, 
 
             { $unwind: "$menu" },
 
+            // A dish ordered by two people at one table arrives as two order
+            // lines. Merge per dish first, summing quantity, so the merchant
+            // reads "pinacolada x4" instead of the same title twice.
             {
                 $group: {
-                    _id: "$_id",
+                    _id: { txn: "$_id", menu: "$menu._id" },
                     name: { $first: "$user.name" },
                     email: { $first: "$user.email" },
                     amount: { $first: "$amount" },
                     status: { $first: "$status" },
                     paymentId: { $first: "$razorpayOrderId" },
-                    items: { $push: "$menu.title" },
+                    tableName: { $first: "$order.tableName" },
+                    createdAt: { $first: "$createdAt" },
+                    title: { $first: "$menu.title" },
+                    quantity: { $sum: { $ifNull: ["$order.items.quantity", 1] } }
+                }
+            },
+
+            {
+                $group: {
+                    _id: "$_id.txn",
+                    name: { $first: "$name" },
+                    email: { $first: "$email" },
+                    amount: { $first: "$amount" },
+                    status: { $first: "$status" },
+                    paymentId: { $first: "$paymentId" },
+                    tableName: { $first: "$tableName" },
+                    items: { $push: { title: "$title", quantity: "$quantity" } },
                     createdAt: { $first: "$createdAt" }
                 }
             },
@@ -96,9 +120,10 @@ export async function GET(req: NextRequest) {
 
         const parmas = req.nextUrl.searchParams;
         const lastCursor = parmas.get("cursor");
+        const since = parmas.get("since");
         const limit = parmas.get("limit") || 20;
 
-        const orders = await getOrders(merchantId,lastCursor , Number(limit))
+        const orders = await getOrders(merchantId, lastCursor, Number(limit), since)
         return sendRJResponse({ success: true, status: 200, data: orders, message: "" })
 
 

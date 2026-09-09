@@ -35,3 +35,6 @@ export const GET_ORDER_HISTORY: string = "/orders"
 export const GET_ALL_ORDER_HISTORY: string = "/orders/all"
 
 export const GET_TRANSACTION_HISTORY: string = "/payment/history"
+// table session (shared cart)
+export const TABLE_SESSION: string = "/table/session"
+export const RELEASE_TABLE: string = "/table/release"

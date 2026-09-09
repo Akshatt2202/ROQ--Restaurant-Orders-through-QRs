@@ -1,84 +1,145 @@
 "use client"
 
 import { useAppDispatch, useAppSelector } from "@/hook/redux"
-import { CheckOutItems, syncCartToCheckOut } from "@/store/reducer/checkout"
+import { CheckOutItems, clearCheckout, syncCartToCheckOut } from "@/store/reducer/checkout"
 import React from "react"
 import CheckOutItem from "./CheckOutItem"
 import { GET_PAYMENT_ORDER, POST_PAYMENT_VERIFY } from "@/utils/APIConstant"
 import { ApiResponse } from "@/utils/api"
-import { Orders } from "razorpay/dist/types/orders"
 import { getApi, postApi } from "@/utils/common"
 import toast from "react-hot-toast"
 import { useRouter } from "next/navigation"
 import autoTable from "jspdf-autotable"
 import jsPDF from "jspdf"
+import { getRememberedTable, rememberTable } from "@/utils/table"
+import { useTableSession } from "@/hook/useTableSession"
+import { RELEASE_TABLE } from "@/utils/APIConstant"
+import { Users } from "lucide-react"
 
 export type RazorpayOrder = {
   id: string
   amount: number
   currency: string
+  notes?: {
+    merchant?: string
+    email?: string
+    transactionId?: string
+    purpose?: string
+  }
 }
 
-function CheckoutPage({ merchantId }: { merchantId: string }) {
+export type RazorpayHandlerResponse = {
+  razorpay_order_id: string
+  razorpay_payment_id: string
+  razorpay_signature: string
+}
+
+function CheckoutPage({ merchantId }: { merchantId: string }) { 
   const checkout: CheckOutItems[] = useAppSelector(state => state.checkOut)
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const [isPaying, setIsPaying] = React.useState(false)
+
+  // Rejoin the table on this page too, so the totals stay live while someone
+  // else is still adding items from their own phone.
+  const session = useTableSession(merchantId, getRememberedTable(merchantId) || undefined)
+
+  const heldByOther =
+    session?.status === "LOCKED" && !session.lockedByMe
+
+  const releaseTable = async () => {
+    if (!session) return
+    await postApi<ApiResponse<void>>({ url: RELEASE_TABLE, values: {} })
+  }
 
   const handlePay = async () => {
-    const res = await getApi<ApiResponse<RazorpayOrder>>({
-      url: GET_PAYMENT_ORDER + `?mid=${merchantId}`,
-    })
+    if (isPaying) return
+    setIsPaying(true)
 
-    if (!res?.success || !res.data) return
+    try {
+      // The table comes from the scanned QR, kept for this browsing session.
+      const table = getRememberedTable(merchantId)
 
-    // if (!(window as any).Razorpay) {
-    //   toast.error("Razorpay SDK not loaded")
-    //   return
-    // }
+      const res = await getApi<ApiResponse<RazorpayOrder>>({
+        url:
+          GET_PAYMENT_ORDER +
+          `?mid=${merchantId}` +
+          (table ? `&table=${encodeURIComponent(table)}` : ""),
+      })
 
-    const order = res.data
+      if (!res?.success || !res.data) {
+        toast.error(res?.message || "Could not start the payment")
+        setIsPaying(false)
+        return
+      }
 
-    // const options = {
-    //   key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-    //   amount: order.amount,
-    //   currency: "INR",
-    //   name: "Akshat",
-    //   image: "https://res.cloudinary.com/dcyn3ewpv/image/upload/v1769262410/e9eec5ed9a883498f7c5ba1ed3c27fdc_idvihd.jpg",
-    //   description: "Your order enters the domain",
-    //   order_id: order.id,
-    //   handler: async function (response: any) {
+      if (!(window as any).Razorpay) {
+        toast.error("Razorpay SDK not loaded")
+        setIsPaying(false)
+        return
+      }
 
-    //     await handleLogPayment(response)
+      const order = res.data
 
-    //     generateReceiptPDF({
-    //       ...response,
-    //       amount: order.amount,
-    //       order
-    //     })
-    //   },
-    //   theme: {
-    //     color: "#16a34a",
-    //   },
-    // }
+      const options = { 
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
+        amount: order.amount,
+        currency: order.currency || "INR",
+        name: order.notes?.merchant || "QR Menu",
+        description: "Your order enters the domain",
+        order_id: order.id,
+        handler: async function (response: RazorpayHandlerResponse) {
+          const verified = await handleLogPayment(response)
 
-    // const rzp = new (window as any).Razorpay(options)
-    // rzp.open()
+          if (!verified) return
 
-    // SIMULATING SUCCESSFUL RAZORPAY RESPONSE
-    const mockResponse = {
-      razorpay_payment_id: "pay_mock_" + Math.random().toString(36).substring(7),
-      razorpay_order_id: order.id,
-      razorpay_signature: "mock_signature_bypass",
+          try {
+            generateReceiptPDF({
+              ...response,
+              amount: order.amount,
+              order,
+            })
+          } catch (error) {
+            // A failed receipt must never trap the customer on this screen.
+            console.error("Error while generating receipt:", error)
+          }
+
+          // Payment is done: drop the local cart and send them back to the menu
+          // instead of leaving the button spinning on "Processing…".
+          dispatch(clearCheckout())
+          setIsPaying(false)
+          router.replace(
+            `/consumer/${merchantId}` +
+            (table ? `?table=${encodeURIComponent(table)}` : "")
+          )
+        },
+        modal: {
+          ondismiss: () => {
+            setIsPaying(false)
+            // Hand the table back - otherwise nobody else could ever pay.
+            void releaseTable()
+            toast("Payment cancelled")
+          },
+        },
+        theme: {
+          color: "#16a34a",
+        },
+      }
+
+      const rzp = new (window as any).Razorpay(options)
+
+      rzp.on("payment.failed", (response: any) => {
+        setIsPaying(false)
+        void releaseTable()
+        toast.error(response?.error?.description || "Payment failed")
+      })
+
+      rzp.open()
+    } catch (error) {
+      console.error("Error while starting payment:", error)
+      toast.error("Something went wrong")
+      setIsPaying(false)
     }
-
-    await handleLogPayment(mockResponse)
-
-    generateReceiptPDF({
-      ...mockResponse,
-      amount: order.amount,
-      order
-    })
-
   }
 
   const generateReceiptPDF = (payment: any) => {
@@ -102,6 +163,7 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
         ["Payment ID", payment.razorpay_payment_id],
         ["Order ID", payment.razorpay_order_id],
         ["Merchant", payment.order?.notes?.merchant || "Akshat"],
+        ["Table", payment.order?.notes?.table || "—"],
         ["email", payment.order?.notes?.email || "unknown"],
         ["Amount", (payment.amount / 100 || "—")],
         ["Status", "SUCCESS"],
@@ -112,19 +174,29 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
     doc.save(`receipt-${payment.razorpay_payment_id}.pdf`)
   }
 
-  const handleLogPayment = async (req: any) => {
+  const handleLogPayment = async (req: RazorpayHandlerResponse): Promise<boolean> => {
     const result = await postApi<ApiResponse<void>>({
       url: POST_PAYMENT_VERIFY,
-      values: req
+      values: req as unknown as Record<string, string>
     })
 
-    if (result?.success) {
-      router.back();
+    if (!result?.success) {
+      setIsPaying(false)
+      toast.error(result?.message || "Payment verification failed")
+      return false
     }
+
+    toast.success("Payment successful")
+    return true
   }
 
 
   React.useEffect(() => {
+    // A customer can land here straight from a QR link, so keep the table if
+    // it is on the url before falling back to what the menu page stored.
+    const table = new URLSearchParams(window.location.search).get("table")
+    rememberTable(merchantId, table)
+
     dispatch(syncCartToCheckOut({ dispatch: dispatch }));
   }, [])
 
@@ -136,15 +208,18 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
     )
   }
 
+  // At a shared table the bill is everything the table added, not just mine.
+  const countOf = (item: CheckOutItems) => item.tableCount ?? item.itemCount
+
   const originalTotal = checkout.reduce(
     (sum, item) =>
       sum +
-      (item.originalPrice ?? item.price) * item.itemCount,
+      (item.originalPrice ?? item.price) * countOf(item),
     0
   )
 
   const discountedTotal = checkout.reduce(
-    (sum, item) => sum + item.price * item.itemCount,
+    (sum, item) => sum + item.price * countOf(item),
     0
   )
 
@@ -156,6 +231,16 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
       <h1 className="mb-4 font-mono text-2xl text-zinc-950">
         Checkout
       </h1>
+
+      {session && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <Users size={16} />
+          <span className="font-medium">Table {session.tableName}</span>
+          <span className="text-green-700/70">
+            · shared with {session.members.map((m) => (m.isMe ? "you" : m.name)).join(", ")}
+          </span>
+        </div>
+      )}
 
       {/* Items */}
       <div className="mb-32 flex flex-col gap-3">
@@ -174,7 +259,7 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
           </div>
 
           <div className="flex justify-between font-medium text-green-600">
-            <span>Just for you</span>
+            <span>{session ? "Table total" : "Just for you"}</span>
             <span>₹{discountedTotal}</span>
           </div>
 
@@ -186,8 +271,16 @@ function CheckoutPage({ merchantId }: { merchantId: string }) {
           )}
         </div>
 
-        <button onClick={handlePay} className="w-full cursor-pointer rounded-xl bg-green-600 py-3 text-sm font-semibold text-white hover:bg-green-700 transition">
-          Place Order • ₹{discountedTotal}
+        <button
+          onClick={handlePay}
+          disabled={isPaying || heldByOther}
+          className="w-full cursor-pointer rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-400"
+        >
+          {heldByOther
+            ? `${session?.lockedByName || "Someone"} is placing the order…`
+            : isPaying
+              ? "Processing…"
+              : `Place Order • ₹${discountedTotal}`}
         </button>
       </div>
     </div>

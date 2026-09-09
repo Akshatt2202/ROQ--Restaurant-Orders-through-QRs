@@ -9,6 +9,7 @@ import { useAppDispatch, useAppSelector } from "@/hook/redux"
 import { usePathname, useRouter } from "next/navigation"
 import AuthDialog from "../Auth"
 import { IROLE } from "@/types/role"
+import { getRememberedTable } from "@/utils/table"
 
 function ItemNotch() {
   const router = useRouter()
@@ -46,9 +47,17 @@ function ItemNotch() {
         exit={{ y: 30, opacity: 0, scale: 0.9 }}
         transition={{ type: "spring", stiffness: 300, damping: 20 }}
         className="fixed cursor-pointer bottom-6 left-1/2 z-50 -translate-x-1/2"
-        onClick={() =>
-          router.push(`${pathname}/checkout`)
-        }
+        onClick={() => {
+          // Carry the scanned table on the url as well, so checkout still knows
+          // the table even if session storage was cleared or blocked.
+          const merchantId = pathname.split("/")[2] || ""
+          const table = getRememberedTable(merchantId)
+
+          router.push(
+            `${pathname}/checkout` +
+            (table ? `?table=${encodeURIComponent(table)}` : "")
+          )
+        }}
       >
         <div className="flex items-center gap-3 rounded-full bg-white px-3 py-2 shadow-xl ring-1 ring-black/5">
 
